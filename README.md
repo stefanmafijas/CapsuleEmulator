@@ -1,4 +1,4 @@
-<img width="1259" height="795" alt="image" src="https://github.com/user-attachments/assets/51be898e-8bdc-425f-b7aa-8a85269c2661" />
+<img width="1266" height="813" alt="image" src="https://github.com/user-attachments/assets/2b7dd4a0-f662-4ed6-8b56-c08d069c1f79" />
 <img width="1259" height="795" alt="image" src="https://github.com/user-attachments/assets/17c51f04-ca66-4dfa-910a-185601db0494" />
 
 # Capsule
