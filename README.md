@@ -5,6 +5,20 @@ Launcher/emulator for the Pokemon series, Gen I–IX, for Windows. C++17, SDL2 +
 
 No games are included. You add ROMs dumped from your own cartridges.
 
+[![Latest release](https://img.shields.io/github/v/release/stefanmafijas/CapsuleEmulator)](../../releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/stefanmafijas/CapsuleEmulator/total)](../../releases)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
+
+**One app for every generation.** No more juggling mGBA, melonDS, a 3DS emulator and a Switch emulator,
+each with its own settings, folders and key bindings.
+
+- Gen I–IX in one library, one install, cores included
+- GB, GBC, GBA, DS and 3DS run inside Capsule; Switch games run in your own emulator, embedded in the window
+- RetroAchievements built in (GB/GBC/GBA/DS)
+- 10 save-state slots per game, auto-saving in-game saves, fast-forward
+- Every key rebindable, fullscreen, mouse as DS touch screen
+- Per-user install, no admin, open source (GPL-3.0)
+
 ## Install
 
 Download `CapsuleSetup.exe` from the [latest release](../../releases/latest) and run it.
