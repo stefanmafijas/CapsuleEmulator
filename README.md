@@ -1,3 +1,6 @@
+<img width="1259" height="795" alt="image" src="https://github.com/user-attachments/assets/51be898e-8bdc-425f-b7aa-8a85269c2661" />
+<img width="1259" height="795" alt="image" src="https://github.com/user-attachments/assets/17c51f04-ca66-4dfa-910a-185601db0494" />
+
 # Capsule
 
 Launcher/emulator for the Pokemon series, Gen I–IX, for Windows. C++17, SDL2 + OpenGL, Dear ImGui, libretro cores
@@ -15,7 +18,8 @@ each with its own settings, folders and key bindings.
 - Gen I–IX in one library, one install, cores included
 - GB, GBC, GBA, DS and 3DS run inside Capsule; Switch games run in your own emulator, embedded in the window
 - RetroAchievements built in (GB/GBC/GBA/DS)
-- 10 save-state slots per game, auto-saving in-game saves, fast-forward
+- 10 save-state slots per game, auto-saving in-game saves, fast-forward<img width="1266" height="813" alt="image" src="https://github.com/user-attachments/assets/9aa684a7-8f6f-450f-a391-68ff41db4c6e" />
+
 - Every key rebindable, fullscreen, mouse as DS touch screen
 - Per-user install, no admin, open source (GPL-3.0)
 
