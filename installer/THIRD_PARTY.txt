@@ -1,0 +1,19 @@
+Capsule bundles the following third-party software. Each keeps its own license.
+
+Emulation cores (in cores\, loaded at runtime; source code at the links):
+  mGBA libretro core        Mozilla Public License 2.0   https://github.com/libretro/mgba
+  melonDS DS libretro core  GNU GPL v3                   https://github.com/JesseTG/melonds-ds
+  Azahar libretro core      GNU GPL v2 or later          https://github.com/azahar-emu/azahar
+
+Built into capsule.exe:
+  SDL2                      zlib License                 https://libsdl.org
+  Dear ImGui                MIT License                  https://github.com/ocornut/imgui
+  rcheevos                  MIT License                  https://github.com/RetroAchievements/rcheevos
+  stb_image                 Public domain / MIT          https://github.com/nothings/stb
+  libretro.h                MIT License                  https://github.com/libretro/libretro-common
+
+Generation mascot silhouettes are downloaded at runtime from PokeAPI
+(https://github.com/PokeAPI/sprites). Pokemon and all related names and artwork
+are trademarks and copyrights of Nintendo, Game Freak, Creatures and The Pokemon Company.
+Capsule is an unofficial fan project and is not affiliated with or endorsed by them.
+No games are included.
