@@ -6,7 +6,7 @@ Unicode true
 !include "MUI2.nsh"
 
 !define APP       "Capsule"
-!define VERSION   "1.1.0"
+!define VERSION   "1.1.1"
 !define EXE       "capsule.exe"
 !define UNINSTKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP}"
 !define BUILD     "..\build"

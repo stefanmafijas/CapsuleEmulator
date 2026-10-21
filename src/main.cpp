@@ -227,7 +227,7 @@ static struct {
     std::deque<std::pair<std::string, fs::path>> queue; // url, destination
     std::set<std::string> requested;
     std::atomic<int> fetched{0};
-    std::thread th;
+    std::vector<std::thread> th; // several workers: each fetch is mostly TLS/network wait
 } imgQ;
 
 // Steam-style unlock notifications, stacked in the bottom-right corner.
@@ -888,7 +888,7 @@ static void pollDownload() {
 
 // ---------- In-app update: capsule.exe is swapped for the latest GitHub release's ----------
 
-static const char* kVersion = "1.1.0"; // keep in sync with VERSION in installer/capsule.nsi
+static const char* kVersion = "1.1.1"; // keep in sync with VERSION in installer/capsule.nsi
 // The latest release must carry version.txt ("1.2.0") and capsule.exe as assets.
 // shortcut: only capsule.exe is replaced, so a release that changes cores/*.dll still needs the installer.
 static const std::string kReleaseUrl = "https://github.com/stefanmafijas/CapsuleEmulator/releases/latest/download/";
@@ -1934,7 +1934,7 @@ int main(int, char**) {
         // keep our GL drawing from painting over an embedded emulator window
         SetWindowLongPtrW(mainHwnd, GWL_STYLE, GetWindowLongPtrW(mainHwnd, GWL_STYLE) | WS_CLIPCHILDREN);
     }
-    imgQ.th = std::thread(imageWorker);
+    for (int i = 0; i < 6; ++i) imgQ.th.emplace_back(imageWorker);
 
     ra::init(&core, toast, [](const std::string& user, const std::string& token) {
         cfg.raUser = user;
@@ -2124,7 +2124,7 @@ int main(int, char**) {
     ra::shutdown();
     quitting = true;
     imgQ.cv.notify_all();
-    imgQ.th.join();
+    for (std::thread& t : imgQ.th) t.join();
     if (update.th.joinable()) update.th.join();
     if (download.state != 0) {
         download.cancel = true;
