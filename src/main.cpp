@@ -174,7 +174,7 @@ static struct {
     fs::path base, roms, saves, states, system, cores, art, badges, config;
 } dirs;
 
-enum View { V_LIBRARY, V_GAME, V_ACHIEVEMENTS, V_SETTINGS, V_DONATE, V_DOWNLOADS };
+enum View { V_LIBRARY, V_GAME, V_ACHIEVEMENTS, V_SETTINGS, V_DONATE };
 
 // Developer's PayPal donation link (https://paypal.me/... or https://www.paypal.com/...). Empty: Donate tab says so.
 static const char* kDonateUrl = "https://paypal.me/stefanmafijas";
@@ -1144,12 +1144,10 @@ static void gameTile(const Game& g, ImVec2 size) {
     dl->AddText(font(fontBold), font(fontBold)->FontSize, p + ImVec2(12, artH + 8), IM_COL32(235, 237, 243, 255), shortTitle(g));
     dl->AddText(p + ImVec2(12, artH + 32), IM_COL32(150, 156, 172, 255), g.platform);
     dl->PopClipRect();
-    if (view != V_DOWNLOADS) {
-        const char* status = unsupported ? "Not supported" : hasRom(g) ? "Ready" : "Not added";
-        ImU32 dot = unsupported ? IM_COL32(120, 125, 140, 255) : hasRom(g) ? IM_COL32(74, 222, 128, 255) : IM_COL32(250, 204, 21, 255);
-        dl->AddCircleFilled(p + ImVec2(17, artH + 65), 4, dot);
-        dl->AddText(p + ImVec2(28, artH + 55), IM_COL32(150, 156, 172, 255), status);
-    }
+    const char* status = unsupported ? "Not supported" : hasRom(g) ? "Ready" : "Not added";
+    ImU32 dot = unsupported ? IM_COL32(120, 125, 140, 255) : hasRom(g) ? IM_COL32(74, 222, 128, 255) : IM_COL32(250, 204, 21, 255);
+    dl->AddCircleFilled(p + ImVec2(17, artH + 65), 4, dot);
+    dl->AddText(p + ImVec2(28, artH + 55), IM_COL32(150, 156, 172, 255), status);
     dl->AddText(p + ImVec2(size.x - 12 - ImGui::CalcTextSize(g.year).x, artH + 55), IM_COL32(150, 156, 172, 255), g.year);
 
     if (selected == &g) dl->AddRect(p, p + size, ImGui::GetColorU32(kAccent), 14, 0, 2.5f);
@@ -1158,8 +1156,7 @@ static void gameTile(const Game& g, ImVec2 size) {
 }
 
 static void drawGenerationList() {
-    bool dlTab = view == V_DOWNLOADS;
-    pageTitle(dlTab ? "Downloads" : "Generations");
+    pageTitle("Generations");
     ImGui::TextDisabled("A launcher for the Pokemon series, Gen I-IX. Unofficial fan project; see Donate for details.");
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
     ImGui::BeginChild("gens");
@@ -1168,7 +1165,7 @@ static void drawGenerationList() {
     float avail = ImGui::GetContentRegionAvail().x, gap = ImGui::GetStyle().ItemSpacing.x;
     int cols = avail > 1100 ? 3 : avail > 700 ? 2 : 1;
     ImVec2 size((avail - gap * (cols - 1)) / cols, 150);
-    for (int gen = 1; gen <= (dlTab ? kGenCount : kCustomGen); ++gen) { // no Custom card in Downloads
+    for (int gen = 1; gen <= kCustomGen; ++gen) {
         const GenInfo& gi = kGens[gen];
         bool custom = gen == kCustomGen;
         int total = 0, ready = 0, first = 9999, last = 0;
@@ -1214,31 +1211,13 @@ static void drawGenerationList() {
         std::string years = first == last ? std::to_string(first) : std::to_string(first) + " - " + std::to_string(last);
         std::string meta = (custom ? "" : years + "   |   ") + std::to_string(total) + (total == 1 ? " game" : " games");
         dl->AddText(p + ImVec2(26, size.y - 34), IM_COL32(255, 255, 255, 200), meta.c_str());
-        if (ready && !dlTab) { // only worth showing once something is added
+        if (ready) { // only worth showing once something is added
             std::string r = std::to_string(ready) + " ready";
             pill(dl, p + ImVec2(26 + ImGui::CalcTextSize(meta.c_str()).x + 12, size.y - 37), r.c_str(), IM_COL32(40, 170, 90, 220));
         }
         ImGui::PopID();
     }
     ImGui::EndChild();
-}
-
-// Fan games on the Downloads tab, keyed by the id of the game slot they install into.
-static const std::map<std::string, const char*> kFanGames = {
-    {"red", "https://raw.githubusercontent.com/stefanmafijas/CapsuleEmulator/main/Resources/PokemonR%20(Fan%20Game).gb"},
-};
-
-// Progress and cancel for g's copy/download. Returns false if none is running for g.
-static bool drawTransfer(const Game& g) {
-    if (download.state == 0 || download.game != &g) return false;
-    uint64_t got = download.got, total = download.total;
-    char label[64];
-    snprintf(label, sizeof label, "%.1f / %s GB", got / 1073741824.0,
-             total ? std::to_string(total / 1073741824.0).substr(0, 4).c_str() : "?");
-    ImGui::TextUnformatted(download.isCopy ? "Copying game file..." : "Downloading game file...");
-    ImGui::ProgressBar(total ? (float)got / total : -1.0f * (float)ImGui::GetTime(), {-1, 0}, label);
-    if (ImGui::Button(download.isCopy ? "Cancel copy" : "Cancel download", {-1, 0})) download.cancel = true;
-    return true;
 }
 
 static void drawPanel(const Game& g) {
@@ -1265,17 +1244,6 @@ static void drawPanel(const Game& g) {
         ImGui::PopTextWrapPos();
     }
     ImGui::Separator();
-
-    if (view == V_DOWNLOADS) {
-        if (drawTransfer(g)) return;
-        auto fan = kFanGames.find(g.id);
-        bool can = !hasRom(g) && fan != kFanGames.end();
-        ImGui::BeginDisabled(!can || download.state != 0);
-        if (primaryButton(hasRom(g) ? "Already Installed" : can ? "Download" : "Unavailable")) startDownload(g, fan->second);
-        ImGui::EndDisabled();
-        if (can && download.state != 0) ImGui::TextDisabled("Another download or copy is running.");
-        return;
-    }
 
     if (g.gen == kCustomGen) {
         CustomGame& c = *std::find_if(customGames.begin(), customGames.end(), [&](CustomGame& x) { return &x.game == &g; });
@@ -1312,7 +1280,16 @@ static void drawPanel(const Game& g) {
         return;
     }
 
-    if (drawTransfer(g)) return; // copy/download in progress for this game
+    if (download.state != 0 && download.game == &g) { // copy/download in progress for this game
+        uint64_t got = download.got, total = download.total;
+        char label[64];
+        snprintf(label, sizeof label, "%.1f / %s GB", got / 1073741824.0,
+                 total ? std::to_string(total / 1073741824.0).substr(0, 4).c_str() : "?");
+        ImGui::TextUnformatted(download.isCopy ? "Copying game file..." : "Downloading game file...");
+        ImGui::ProgressBar(total ? (float)got / total : -1.0f * (float)ImGui::GetTime(), {-1, 0}, label);
+        if (ImGui::Button(download.isCopy ? "Cancel copy" : "Cancel download", {-1, 0})) download.cancel = true;
+        return;
+    }
     if (g.sys == Sys::NSW && hasRom(g)) {
         bool here = ext.game == &g;
         if (primaryButton(here ? "Resume" : "Play")) {
@@ -1874,20 +1851,13 @@ static void drawTopBar() {
     drawLogo();
     ImGui::SameLine(0, 32);
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2);
-    // Library and Downloads share openGen/selected: reset them when switching between the two.
-    static View browsing = V_LIBRARY;
-    auto browse = [](View v) {
-        if (browsing != v) openGen = 0, selected = nullptr, browsing = v;
-        view = v;
-    };
-    if (navButton("Library", view == V_LIBRARY)) browse(V_LIBRARY);
+    if (navButton("Library", view == V_LIBRARY)) view = V_LIBRARY;
     if (running || extRunning()) {
         ImGui::SameLine();
         std::string label = std::string("Playing: ") + shortTitle(running ? *running : *ext.game);
         if (navButton(label.c_str(), view == V_GAME)) view = V_GAME;
     }
     ImGui::SameLine();
-    if (navButton("Downloads", view == V_DOWNLOADS)) browse(V_DOWNLOADS);
     ImGui::SameLine();
     if (navButton("Achievements", view == V_ACHIEVEMENTS)) view = V_ACHIEVEMENTS;
     ImGui::SameLine();
