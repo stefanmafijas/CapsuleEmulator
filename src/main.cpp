@@ -174,7 +174,7 @@ static struct {
     fs::path base, roms, saves, states, system, cores, art, badges, config;
 } dirs;
 
-enum View { V_LIBRARY, V_GAME, V_ACHIEVEMENTS, V_SETTINGS, V_DONATE };
+enum View { V_LIBRARY, V_GAME, V_ACHIEVEMENTS, V_SETTINGS, V_DONATE, V_DOWNLOADS };
 
 // Developer's PayPal donation link (https://paypal.me/... or https://www.paypal.com/...). Empty: Donate tab says so.
 static const char* kDonateUrl = "https://paypal.me/stefanmafijas";
@@ -886,6 +886,79 @@ static void pollDownload() {
     download.state = 0;
 }
 
+// ---------- In-app update: capsule.exe is swapped for the latest GitHub release's ----------
+
+static const char* kVersion = "1.1.0"; // keep in sync with VERSION in installer/capsule.nsi
+// The latest release must carry version.txt ("1.2.0") and capsule.exe as assets.
+// shortcut: only capsule.exe is replaced, so a release that changes cores/*.dll still needs the installer.
+static const std::string kReleaseUrl = "https://github.com/stefanmafijas/CapsuleEmulator/releases/latest/download/";
+static struct {
+    std::thread th;
+    std::atomic<int> state{0}; // 0 none, 1 available, 2 downloading, 3 installed (restart), 4 failed
+    std::string latest, error; // written by th before it changes state
+    std::atomic<uint64_t> got{0}, total{0};
+} update;
+static bool restartAfterQuit = false;
+
+static bool newerVersion(const std::string& v) {
+    int a[3]{}, b[3]{};
+    if (sscanf(v.c_str(), "%d.%d.%d", &a[0], &a[1], &a[2]) != 3) return false;
+    sscanf(kVersion, "%d.%d.%d", &b[0], &b[1], &b[2]);
+    return std::lexicographical_compare(b, b + 3, a, a + 3);
+}
+
+static fs::path exePath() {
+    wchar_t buf[MAX_PATH];
+    return fs::path(std::wstring(buf, GetModuleFileNameW(nullptr, buf, MAX_PATH)));
+}
+
+static void updateCheckWorker() {
+    std::string body;
+    HttpResult r = httpRequest(kReleaseUrl + "version.txt", nullptr, "", [&](const char* d, size_t n) {
+        body.append(d, n);
+        return body.size() < 64;
+    }, &quitting);
+    body.erase(body.find_last_not_of(" \r\n\t") + 1);
+    if (r.error.empty() && r.status == 200 && newerVersion(body)) {
+        update.latest = body;
+        update.state = 1;
+    }
+}
+
+static void updateWorker() {
+    fs::path exe = exePath(), part = exe, old = exe;
+    part += ".new";
+    old += ".old";
+    std::string error;
+    {
+        std::ofstream out(part, std::ios::binary | std::ios::trunc);
+        std::string head;
+        HttpResult r = httpRequest(kReleaseUrl + "capsule.exe", nullptr, "", [&](const char* d, size_t n) {
+            if (head.size() < 2) head.append(d, std::min<size_t>(n, 2));
+            update.got += n;
+            return (bool)out.write(d, n);
+        }, &quitting, &update.total);
+        out.close();
+        if (!r.error.empty()) error = r.error;
+        else if (r.status != 200) error = "Server answered HTTP " + std::to_string(r.status);
+        else if (!out) error = "Could not write " + part.u8string();
+        else if (head.rfind("MZ", 0) != 0 || update.got < 100000) error = "Downloaded file is not a program";
+    }
+    std::error_code ec;
+    if (error.empty()) {
+        // A running exe can't be overwritten but can be renamed; the .old copy is deleted on next start.
+        fs::remove(old, ec);
+        fs::rename(exe, old, ec);
+        if (!ec) {
+            fs::rename(part, exe, ec);
+            if (ec) fs::rename(old, exe, ec), error = "Could not replace " + exe.u8string();
+        } else error = "Could not replace " + exe.u8string();
+    }
+    if (!error.empty()) fs::remove(part, ec);
+    update.error = error;
+    update.state = error.empty() ? 3 : 4;
+}
+
 static void saveState() {
     toast(core.saveState(statePath(*running, slot)) ? "Saved state to slot " + std::to_string(slot)
                                                     : std::string("Save state failed"));
@@ -1071,10 +1144,12 @@ static void gameTile(const Game& g, ImVec2 size) {
     dl->AddText(font(fontBold), font(fontBold)->FontSize, p + ImVec2(12, artH + 8), IM_COL32(235, 237, 243, 255), shortTitle(g));
     dl->AddText(p + ImVec2(12, artH + 32), IM_COL32(150, 156, 172, 255), g.platform);
     dl->PopClipRect();
-    const char* status = unsupported ? "Not supported" : hasRom(g) ? "Ready" : "Not added";
-    ImU32 dot = unsupported ? IM_COL32(120, 125, 140, 255) : hasRom(g) ? IM_COL32(74, 222, 128, 255) : IM_COL32(250, 204, 21, 255);
-    dl->AddCircleFilled(p + ImVec2(17, artH + 65), 4, dot);
-    dl->AddText(p + ImVec2(28, artH + 55), IM_COL32(150, 156, 172, 255), status);
+    if (view != V_DOWNLOADS) {
+        const char* status = unsupported ? "Not supported" : hasRom(g) ? "Ready" : "Not added";
+        ImU32 dot = unsupported ? IM_COL32(120, 125, 140, 255) : hasRom(g) ? IM_COL32(74, 222, 128, 255) : IM_COL32(250, 204, 21, 255);
+        dl->AddCircleFilled(p + ImVec2(17, artH + 65), 4, dot);
+        dl->AddText(p + ImVec2(28, artH + 55), IM_COL32(150, 156, 172, 255), status);
+    }
     dl->AddText(p + ImVec2(size.x - 12 - ImGui::CalcTextSize(g.year).x, artH + 55), IM_COL32(150, 156, 172, 255), g.year);
 
     if (selected == &g) dl->AddRect(p, p + size, ImGui::GetColorU32(kAccent), 14, 0, 2.5f);
@@ -1083,7 +1158,8 @@ static void gameTile(const Game& g, ImVec2 size) {
 }
 
 static void drawGenerationList() {
-    pageTitle("Generations");
+    bool dlTab = view == V_DOWNLOADS;
+    pageTitle(dlTab ? "Downloads" : "Generations");
     ImGui::TextDisabled("A launcher for the Pokemon series, Gen I-IX. Unofficial fan project; see Donate for details.");
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
     ImGui::BeginChild("gens");
@@ -1092,7 +1168,7 @@ static void drawGenerationList() {
     float avail = ImGui::GetContentRegionAvail().x, gap = ImGui::GetStyle().ItemSpacing.x;
     int cols = avail > 1100 ? 3 : avail > 700 ? 2 : 1;
     ImVec2 size((avail - gap * (cols - 1)) / cols, 150);
-    for (int gen = 1; gen <= kCustomGen; ++gen) {
+    for (int gen = 1; gen <= (dlTab ? kGenCount : kCustomGen); ++gen) { // no Custom card in Downloads
         const GenInfo& gi = kGens[gen];
         bool custom = gen == kCustomGen;
         int total = 0, ready = 0, first = 9999, last = 0;
@@ -1138,13 +1214,31 @@ static void drawGenerationList() {
         std::string years = first == last ? std::to_string(first) : std::to_string(first) + " - " + std::to_string(last);
         std::string meta = (custom ? "" : years + "   |   ") + std::to_string(total) + (total == 1 ? " game" : " games");
         dl->AddText(p + ImVec2(26, size.y - 34), IM_COL32(255, 255, 255, 200), meta.c_str());
-        if (ready) { // only worth showing once something is added
+        if (ready && !dlTab) { // only worth showing once something is added
             std::string r = std::to_string(ready) + " ready";
             pill(dl, p + ImVec2(26 + ImGui::CalcTextSize(meta.c_str()).x + 12, size.y - 37), r.c_str(), IM_COL32(40, 170, 90, 220));
         }
         ImGui::PopID();
     }
     ImGui::EndChild();
+}
+
+// Fan games on the Downloads tab, keyed by the id of the game slot they install into.
+static const std::map<std::string, const char*> kFanGames = {
+    {"red", "https://raw.githubusercontent.com/stefanmafijas/CapsuleEmulator/main/Resources/PokemonR%20(Fan%20Game).gb"},
+};
+
+// Progress and cancel for g's copy/download. Returns false if none is running for g.
+static bool drawTransfer(const Game& g) {
+    if (download.state == 0 || download.game != &g) return false;
+    uint64_t got = download.got, total = download.total;
+    char label[64];
+    snprintf(label, sizeof label, "%.1f / %s GB", got / 1073741824.0,
+             total ? std::to_string(total / 1073741824.0).substr(0, 4).c_str() : "?");
+    ImGui::TextUnformatted(download.isCopy ? "Copying game file..." : "Downloading game file...");
+    ImGui::ProgressBar(total ? (float)got / total : -1.0f * (float)ImGui::GetTime(), {-1, 0}, label);
+    if (ImGui::Button(download.isCopy ? "Cancel copy" : "Cancel download", {-1, 0})) download.cancel = true;
+    return true;
 }
 
 static void drawPanel(const Game& g) {
@@ -1171,6 +1265,17 @@ static void drawPanel(const Game& g) {
         ImGui::PopTextWrapPos();
     }
     ImGui::Separator();
+
+    if (view == V_DOWNLOADS) {
+        if (drawTransfer(g)) return;
+        auto fan = kFanGames.find(g.id);
+        bool can = !hasRom(g) && fan != kFanGames.end();
+        ImGui::BeginDisabled(!can || download.state != 0);
+        if (primaryButton(hasRom(g) ? "Already Installed" : can ? "Download" : "Unavailable")) startDownload(g, fan->second);
+        ImGui::EndDisabled();
+        if (can && download.state != 0) ImGui::TextDisabled("Another download or copy is running.");
+        return;
+    }
 
     if (g.gen == kCustomGen) {
         CustomGame& c = *std::find_if(customGames.begin(), customGames.end(), [&](CustomGame& x) { return &x.game == &g; });
@@ -1207,16 +1312,7 @@ static void drawPanel(const Game& g) {
         return;
     }
 
-    if (download.state != 0 && download.game == &g) { // copy/download in progress for this game
-        uint64_t got = download.got, total = download.total;
-        char label[64];
-        snprintf(label, sizeof label, "%.1f / %s GB", got / 1073741824.0,
-                 total ? std::to_string(total / 1073741824.0).substr(0, 4).c_str() : "?");
-        ImGui::TextUnformatted(download.isCopy ? "Copying game file..." : "Downloading game file...");
-        ImGui::ProgressBar(total ? (float)got / total : -1.0f * (float)ImGui::GetTime(), {-1, 0}, label);
-        if (ImGui::Button(download.isCopy ? "Cancel copy" : "Cancel download", {-1, 0})) download.cancel = true;
-        return;
-    }
+    if (drawTransfer(g)) return; // copy/download in progress for this game
     if (g.sys == Sys::NSW && hasRom(g)) {
         bool here = ext.game == &g;
         if (primaryButton(here ? "Resume" : "Play")) {
@@ -1754,23 +1850,51 @@ static void drawLogo() {
     ImGui::PopFont();
 }
 
+static void drawUpdate() {
+    int st = update.state;
+    if (st == 0) return;
+    ImGui::SameLine();
+    if (st == 1) {
+        std::string label = "Update to " + update.latest;
+        if (primaryButton(label.c_str(), {0, 0})) {
+            update.th.join(); // the check that found it has finished
+            update.state = 2;
+            update.th = std::thread(updateWorker);
+        }
+    } else if (st == 2) {
+        uint64_t got = update.got, total = update.total;
+        ImGui::ProgressBar(total ? (float)got / total : -1.0f * (float)ImGui::GetTime(), {160, 0}, "Updating...");
+    } else if (st == 4) {
+        ImGui::TextDisabled("Update failed");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", update.error.c_str());
+    }
+}
+
 static void drawTopBar() {
     drawLogo();
     ImGui::SameLine(0, 32);
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2);
-    if (navButton("Library", view == V_LIBRARY)) view = V_LIBRARY;
+    // Library and Downloads share openGen/selected: reset them when switching between the two.
+    static View browsing = V_LIBRARY;
+    auto browse = [](View v) {
+        if (browsing != v) openGen = 0, selected = nullptr, browsing = v;
+        view = v;
+    };
+    if (navButton("Library", view == V_LIBRARY)) browse(V_LIBRARY);
     if (running || extRunning()) {
         ImGui::SameLine();
         std::string label = std::string("Playing: ") + shortTitle(running ? *running : *ext.game);
         if (navButton(label.c_str(), view == V_GAME)) view = V_GAME;
     }
     ImGui::SameLine();
+    if (navButton("Downloads", view == V_DOWNLOADS)) browse(V_DOWNLOADS);
     ImGui::SameLine();
     if (navButton("Achievements", view == V_ACHIEVEMENTS)) view = V_ACHIEVEMENTS;
     ImGui::SameLine();
     if (navButton("Settings", view == V_SETTINGS)) view = V_SETTINGS;
     ImGui::SameLine();
     if (navButton("Donate", view == V_DONATE)) view = V_DONATE;
+    drawUpdate();
     ImGui::Separator();
 }
 
@@ -1851,6 +1975,9 @@ int main(int, char**) {
     });
     if (!cfg.raUser.empty() && !cfg.raToken.empty()) ra::loginToken(cfg.raUser, cfg.raToken);
 
+    { std::error_code ec; fs::remove(fs::path(exePath()) += ".old", ec); } // left by the last in-app update
+    update.th = std::thread(updateCheckWorker);
+
     bool quit = false;
     int imgSeen = 0;
     while (!quit) {
@@ -1858,6 +1985,7 @@ int main(int, char**) {
         while (SDL_PollEvent(&e)) {
             ImGui_ImplSDL2_ProcessEvent(&e);
             if (e.type == SDL_QUIT) quit = true;
+            if (update.state == 3) quit = restartAfterQuit = true; // new exe is in place: restart into it
             if (e.type == SDL_SYSWMEVENT && e.syswm.msg->msg.win.msg == WM_HOTKEY) setFullscreen(!fullscreen);
             if (e.type == SDL_CONTROLLERDEVICEADDED) {
                 if (SDL_GameController* c = SDL_GameControllerOpen(e.cdevice.which)) pads.push_back(c);
@@ -2027,6 +2155,7 @@ int main(int, char**) {
     quitting = true;
     imgQ.cv.notify_all();
     imgQ.th.join();
+    if (update.th.joinable()) update.th.join();
     if (download.state != 0) {
         download.cancel = true;
         download.th.join();
@@ -2040,5 +2169,11 @@ int main(int, char**) {
     SDL_GL_DeleteContext(glctx);
     SDL_DestroyWindow(window);
     SDL_Quit();
+    if (restartAfterQuit) {
+        STARTUPINFOW si{sizeof si};
+        PROCESS_INFORMATION pi{};
+        if (CreateProcessW(exePath().c_str(), nullptr, nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi))
+            CloseHandle(pi.hThread), CloseHandle(pi.hProcess);
+    }
     return 0;
 }
